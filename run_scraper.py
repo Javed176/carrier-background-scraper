@@ -31,8 +31,15 @@ def run_scraper():
         }
     )
     
-    # Update this URL to the exact working API route or search page from your functional app
-    url = "https://carrierchk.com/" 
+    # Correct API endpoint and parameters
+    url = "https://carrierchk.com/api/carrier"
+    
+    # Example MC number to query (you can loop through a list of numbers or fetch dynamically)
+    params = {
+        "type": "mc",
+        "value": "123456",  # Replace or expand with your target MC numbers
+        "token": "3243d1219423e4ea"
+    }
     
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -40,8 +47,8 @@ def run_scraper():
     }
 
     try:
-        logger.info(f"Fetching data from {url}")
-        response = scraper.get(url, headers=headers, timeout=30)
+        logger.info(f"Querying carrier data from {url}")
+        response = scraper.get(url, params=params, headers=headers, timeout=30)
         
         logger.info(f"Response Status Code: {response.status_code}")
         
@@ -62,10 +69,12 @@ def process_and_store_data(data):
     """Processes scraped payload and pushes records safely to Supabase."""
     try:
         logger.info("Processing payload for Supabase insertion...")
-        records = data if isinstance(data, list) else data.get("results", [])
         
-        if not records:
-            logger.info("No records found to insert.")
+        # Format records into a list if it's a single dictionary payload
+        records = data if isinstance(data, list) else [data]
+        
+        if not records or not records[0]:
+            logger.info("No valid records found to insert.")
             return
 
         for record in records:
