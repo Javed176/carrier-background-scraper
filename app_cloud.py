@@ -104,7 +104,6 @@ def get_crawler_state():
 
 def update_crawler_state(current_mc, is_running):
   try:
-    # Explicitly force integer conversion to protect DB types
     supabase.table("crawler_state").upsert({
         "id": 1,
         "current_mc": int(current_mc),
@@ -123,6 +122,11 @@ if "is_admin" not in st.session_state:
   st.session_state.is_admin = False
 if "login_time" not in st.session_state:
   st.session_state.login_time = None
+
+# Initialize independent session input for starting MC so it never overwrites while typing
+if "manual_mc_target" not in st.session_state:
+  state_init = get_crawler_state()
+  st.session_state.manual_mc_target = str(state_init["current_mc"])
 
 if "last_db_check" not in st.session_state:
   st.session_state.last_db_check = 0.0
@@ -315,18 +319,16 @@ if not show_admin_panel:
   with col_st2:
     st.metric("Enforced Speed Limit", speed_mode_string)
 
-  # Text input bound strictly to session state key tracking
+  # Stable Input field bound safely to session state so it doesn't revert while typing
   new_mc_input = st.text_input(
       "Set / Reset Starting MC Number:",
-      value=str(current_mc_val),
-      key="mc_input_field"
+      key="manual_mc_target"
   )
 
   col_btn1, col_btn2 = st.columns(2)
   if col_btn1.button("🚀 Start 24/7 Cloud Sequence", use_container_width=True):
-    target_mc = str(st.session_state.get("mc_input_field", current_mc_val)).strip()
+    target_mc = str(st.session_state.manual_mc_target).strip()
     if target_mc.isdigit():
-      # Immediately force update the database state table row ID=1
       update_crawler_state(int(target_mc), True)
       log_activity(
           st.session_state.current_user,
