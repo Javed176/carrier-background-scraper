@@ -3,7 +3,6 @@ import time
 import requests
 from supabase import create_client, Client
 
-# --- SUPABASE & TOKEN CONFIGURATION ---
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
 CARRIER_TOKEN = os.environ.get("CARRIER_TOKEN", "3243d1219423e4ea")
@@ -12,7 +11,6 @@ if not SUPABASE_URL or not SUPABASE_KEY:
     print("🔑 Database configuration missing!")
     exit(1)
 
-# Initialize Supabase client
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 def get_carrier_info(mc_number, token, retries=6):
@@ -56,7 +54,7 @@ def parse_carrier_data(mc_number, raw_data):
     phone = c.get("phone") or c.get("cell_phone") or "N/A"
     email = c.get("email_address")
     if not email or str(email).strip() == "":
-        return None  # Skip if no email found
+        return None
         
     city = c.get("phy_city", "").strip()
     state = c.get("phy_state", "").strip()
@@ -85,7 +83,7 @@ def main():
         
         if parsed:
             try:
-                response = supabase.table("harvested_leads").upsert(parsed, on_conflict="mc_number").execute()
+                supabase.table("harvested_leads").upsert(parsed, on_conflict="mc_number").execute()
                 print(f"Successfully saved lead: {parsed['email_address']}")
             except Exception as e:
                 print(f"Database insert error: {e}")
