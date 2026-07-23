@@ -2,7 +2,7 @@ import os
 import cloudscraper
 from supabase import create_client, Client
 
-# Initialize Supabase
+# Initialize Supabase connection
 SUPABASE_URL = os.environ.get("SUPABASE_URL") or "YOUR_SUPABASE_URL"
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY") or "YOUR_SUPABASE_KEY"
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -28,9 +28,7 @@ for i in range(batch_size):
     target_mc = start_mc + i
     
     try:
-        # Update this path if your carrierchk endpoint uses a different route structure
         url = f"https://carrierchk.com/api/carrier/{target_mc}"
-        
         response = scraper.get(url, headers=headers)
         
         if response.status_code == 200:
@@ -57,4 +55,4 @@ for i in range(batch_size):
     except Exception as e:
         print(f"Error processing MC {target_mc}: {e}")
 
-print("Batch scraper run completed.")
+print("Batch scraper run completed successfully!")
