@@ -1,3 +1,10 @@
+name: Run Carrier Scraper
+
+on:
+  schedule:
+    - cron: '0 */6 * * *' # Runs every 6 hours (adjust as needed)
+  workflow_dispatch: # Allows manual trigger
+
 jobs:
   run-scraper:
     runs-on: ubuntu-latest
@@ -13,7 +20,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install cloudscraper supabase requests
 
       - name: Run Scraper Script
         run: python run_scraper.py
