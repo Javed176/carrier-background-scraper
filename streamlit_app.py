@@ -1,18 +1,61 @@
 import streamlit as st
+import pandas as pd
+from supabase import create_client, Client
+import os
 
-st.set_page_config(
-    page_title="Carrier Scraper Hub",
-    page_icon="🚚",
-    layout="wide"
-)
+# Initialize connection to Supabase
+SUPABASE_URL = os.environ.get("SUPABASE_URL") or st.secrets.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY") or st.secrets.get("SUPABASE_KEY")
 
-st.title("🚚 AR Transport Carrier Scraper Hub")
-st.write("Welcome to the automated carrier lead generation dashboard.")
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-st.markdown("""
-### Overview
-Use the navigation sidebar on the left to access the **Scraper Control Panel** (`scraper`). 
-From there, you can configure your batch settings, execute manual runs, and stream new leads directly into your Supabase database.
-""")
+st.set_page_config(page_title="Carrier Scraper Dashboard", layout="wide")
 
-st.info("👈 Select **scraper** from the sidebar pages to get started.")
+st.title("Carrier Scraper Control Panel")
+st.write("Manage your scraping batch controls and monitor your data live.")
+
+# Initialize session state for running status
+if "is_running" not in st.session_state:
+    st.session_state.is_running = False
+
+# Control Panel Form Layout
+col1, col2 = st.columns(2)
+
+with col1:
+    current_mc = st.number_input("Current MC Number", value=1066434, step=1)
+
+with col2:
+    max_records = st.number_input("Max records to fetch in this batch", value=100, step=10)
+
+# Start and Stop Buttons side by side
+b_col1, b_col2, _ = st.columns([1, 1, 4])
+
+with b_col1:
+    if st.button("Start Scraping", type="primary", use_container_width=True):
+        st.session_state.is_running = True
+
+with b_col2:
+    if st.button("Stop Scraping", use_container_width=True):
+        st.session_state.is_running = False
+
+# Status display
+if st.session_state.is_running:
+    st.success(f"Scraping active... Fetching up to {max_records} records starting from MC {current_mc}.")
+    # Add your real-time batch loop trigger or integration logic here
+else:
+    st.warning("Scraper is currently stopped.")
+
+st.divider()
+
+# Master History Sheet / Database Viewer Section
+st.subheader("Master History Sheet")
+try:
+    response = supabase.table("carriers").select("*").execute()
+    data = response.data
+    if data:
+        df = pd.DataFrame(data)
+        st.dataframe(df, use_container_width=True)
+    else:
+        st.info("No records found in the database yet.")
+except Exception as e:
+    st.error(f"Error loading data from Supabase: {e}")
