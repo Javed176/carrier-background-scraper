@@ -104,6 +104,7 @@ def get_crawler_state():
 
 def update_crawler_state(current_mc, is_running):
   try:
+    # Explicitly force integer conversion to protect DB types
     supabase.table("crawler_state").upsert({
         "id": 1,
         "current_mc": int(current_mc),
@@ -314,7 +315,7 @@ if not show_admin_panel:
   with col_st2:
     st.metric("Enforced Speed Limit", speed_mode_string)
 
-  # Fixed Input field binding using a key for immediate session tracking
+  # Text input bound strictly to session state key tracking
   new_mc_input = st.text_input(
       "Set / Reset Starting MC Number:",
       value=str(current_mc_val),
@@ -323,8 +324,9 @@ if not show_admin_panel:
 
   col_btn1, col_btn2 = st.columns(2)
   if col_btn1.button("🚀 Start 24/7 Cloud Sequence", use_container_width=True):
-    target_mc = st.session_state.get("mc_input_field", str(current_mc_val))
+    target_mc = str(st.session_state.get("mc_input_field", current_mc_val)).strip()
     if target_mc.isdigit():
+      # Immediately force update the database state table row ID=1
       update_crawler_state(int(target_mc), True)
       log_activity(
           st.session_state.current_user,
@@ -356,10 +358,8 @@ if not show_admin_panel:
     df_all = pd.DataFrame(all_leads_res.data) if all_leads_res.data else pd.DataFrame()
     
     if not df_all.empty:
-      # Normalize column names to lowercase to prevent matching bugs
       df_all.columns = [str(c).lower().strip() for c in df_all.columns]
       
-      # Flexible filtering for verified active leads containing emails
       status_col = "operating_status" if "operating_status" in df_all.columns else ("status" if "status" in df_all.columns else None)
       email_col = "email_address" if "email_address" in df_all.columns else ("email" if "email" in df_all.columns else None)
       
@@ -372,11 +372,7 @@ if not show_admin_panel:
             (df_all[email_col].astype(str).str.lower() != "nan")
         ]
       else:
-        # Fallback if specific status column names vary
-        df_verified = df_all[
-            (df_all.iloc[:, 1].notna()) & 
-            (df_all.iloc[:, 1].astype(str).str.strip() != "")
-        ] if len(df_all.columns) > 1 else pd.DataFrame()
+        df_verified = pd.DataFrame()
         
       verified_count = len(df_verified)
     else:
