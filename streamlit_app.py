@@ -12,7 +12,7 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 st.set_page_config(page_title="Carrier Scraper Dashboard", layout="wide")
 
 st.title("Carrier Scraper Control Panel")
-st.write("Manage your scraping batch controls and monitor your data live.")
+st.write("Enter your starting MC number below and click **Start Scraping** to begin harvesting leads automatically.")
 
 # Initialize session state for running status
 if "is_running" not in st.session_state:
@@ -22,12 +22,12 @@ if "is_running" not in st.session_state:
 col1, col2 = st.columns(2)
 
 with col1:
-    current_mc = st.number_input("Current MC Number", value=1066434, step=1)
+    current_mc = st.number_input("Current MC", value=1066434, step=1)
 
 with col2:
     max_records = st.number_input("Max records to fetch in this batch", value=100, step=10)
 
-# Start and Stop Buttons side by side
+# Start and Stop Scraping buttons side-by-side
 b_col1, b_col2, _ = st.columns([1, 1, 4])
 
 with b_col1:
@@ -40,8 +40,7 @@ with b_col2:
 
 # Status display
 if st.session_state.is_running:
-    st.success(f"Scraping active... Fetching up to {max_records} records starting from MC {current_mc}.")
-    # Add your real-time batch loop trigger or integration logic here
+    st.info(f"Starting scraper from MC #{current_mc} for {max_records} records...")
 else:
     st.warning("Scraper is currently stopped.")
 
