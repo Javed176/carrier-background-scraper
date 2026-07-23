@@ -342,33 +342,48 @@ if not show_admin_panel:
 
   st.markdown("---")
 
-  # --- DATABASE MAINTENANCE (DELETE OLD DATA BUTTON) ---
+  # --- DATABASE MAINTENANCE (DELETE OLD DATA BUTTONS) ---
   st.subheader("🗑️ Database Maintenance")
-  st.write("Clear out old historical activity logs from your database.")
-  if st.button("🗑️ Clear All Activity Logs", type="primary"):
-    try:
-      supabase.table("activity_logs").delete().neq("id", 0).execute()
-      log_activity(
-          st.session_state.current_user,
-          "clear_logs",
-          "Cleared activity logs",
-      )
-      st.success("Old activity logs cleared successfully!")
-      st.rerun()
-    except Exception as e:
-      st.error(f"Failed to clear logs: {e}")
+  st.write("Clear out old historical data or logs from your database.")
+
+  col_m1, col_m2 = st.columns(2)
+  with col_m1:
+    if st.button("🗑️ Clear Activity Logs", type="secondary"):
+      try:
+        supabase.table("activity_logs").delete().neq("id", 0).execute()
+        st.success("Activity logs cleared!")
+        st.rerun()
+      except Exception as e:
+        st.error(f"Error: {e}")
+
+  with col_m2:
+    if st.button("🗑️ Clear Carrier Data Table", type="primary"):
+      try:
+        supabase.table("carriers").delete().neq("id", 0).execute()
+        st.success("Carrier data table cleared successfully!")
+        st.rerun()
+      except Exception as e:
+        st.error(f"Error clearing carrier table: {e}")
 
   st.markdown("---")
-  st.subheader("📊 Live Activity & Recent Logs from Cloud Database")
-  logs = (
-      supabase.table("activity_logs")
-      .select("*")
-      .order("created_at", desc=True)
-      .limit(50)
-      .execute()
-      .data
-  )
-  if logs:
-    st.dataframe(pd.DataFrame(logs), use_container_width=True)
-  else:
-    st.info("No logs found in database.")
+  st.subheader("📋 Master History Sheet (Harvested Carriers)")
+
+  try:
+    carriers_res = (
+        supabase.table("carriers")
+        .select("*")
+        .order("created_at", desc=True)
+        .limit(100)
+        .execute()
+    )
+    if carriers_res.data:
+      st.dataframe(pd.DataFrame(carriers_res.data), use_container_width=True)
+    else:
+      st.info(
+          "No carrier records found yet. Start the scraper to harvest data."
+      )
+  except Exception as e:
+    st.info(
+        "Could not load carriers table. Make sure your table name matches"
+        " (e.g., 'carriers')."
+    )
