@@ -1,8 +1,3 @@
-name: Run Carrier Scraper
-
-on:
-  workflow_dispatch:
-
 jobs:
   run-scraper:
     runs-on: ubuntu-latest
@@ -18,12 +13,10 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install requests pandas supabase
+          pip install -r requirements.txt
 
       - name: Run Scraper Script
+        run: python run_scraper.py
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-          CARRIER_TOKEN: ${{ secrets.CARRIER_TOKEN }}
-        run: |
-          python run_scraper.py
