@@ -38,6 +38,11 @@ if st.button("Start Scraping", type="primary"):
     current_mc = start_mc
 
     for i in range(max_records):
+        # Format with zero-padding (e.g., 9 digits: 001066434) and MC- prefix
+        # Change `09d` to whatever length or format you prefer (e.g., `06d` or just `{current_mc}`)
+        padded_num = f"{current_mc:09d}"
+        formatted_mc = f"MC-{padded_num}"
+        
         params = {
             "type": "mc",
             "value": str(current_mc),
@@ -56,10 +61,16 @@ if st.button("Start Scraping", type="primary"):
                     state = carrier_info.get("phy_state", "")
                     location_str = f"{city}, {state}".strip(", ")
 
+                    raw_status = carrier_info.get("status_code", "ACTIVE").upper()
+                    if "ACTIVE" in raw_status:
+                        status_str = "🟢 ACTIVE"
+                    else:
+                        status_str = f"🔴 {raw_status}"
+
                     record = {
-                        "mc_number": str(current_mc),
+                        "mc_number": formatted_mc,
                         "carrier_name": carrier_info.get("legal_name", "Unknown Carrier"),
-                        "operating_status": carrier_info.get("status_code", "Active"),
+                        "operating_status": status_str,
                         "phone_number": carrier_info.get("phone"),
                         "email_address": carrier_info.get("email_address"),
                         "location": location_str
@@ -67,17 +78,17 @@ if st.button("Start Scraping", type="primary"):
                     
                     supabase.table("harvested_leads").upsert(record, on_conflict="mc_number").execute()
                     success_count += 1
-                    st.success(f"Saved: MC {current_mc} - {carrier_info.get('legal_name')}")
+                    st.success(f"Saved: {formatted_mc} - {carrier_info.get('legal_name')}")
                 else:
-                    st.info(f"No active record found for MC {current_mc}")
+                    st.info(f"No active record found for {formatted_mc}")
             elif response.status_code == 429:
-                st.warning(f"Rate limited (429) on MC {current_mc}. Pausing 10s...")
+                st.warning(f"Rate limited (429) on {formatted_mc}. Pausing 10s...")
                 time.sleep(10)
             else:
-                st.warning(f"API returned status code {response.status_code} for MC {current_mc}")
+                st.warning(f"API returned status code {response.status_code} for {formatted_mc}")
                 
         except Exception as e:
-            st.error(f"Error querying MC {current_mc}: {str(e)}")
+            st.error(f"Error querying {formatted_mc}: {str(e)}")
         
         progress_bar.progress((i + 1) / max_records)
         current_mc += 1
