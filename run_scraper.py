@@ -1,85 +1,108 @@
 import os
 import time
-import requests
+import logging
+import cloudscraper
 from supabase import create_client, Client
 
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
-CARRIER_TOKEN = os.environ.get("CARRIER_TOKEN", "3243d1219423e4ea")
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
-print("Initializing script...")
+# Supabase Configuration
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+
 if not SUPABASE_URL or not SUPABASE_KEY:
-    print("❌ Database configuration missing!")
-    exit(1)
+    logger.error("Supabase credentials missing from environment variables.")
+    raise ValueError("Missing SUPABASE_URL or SUPABASE_KEY environment variables.")
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-def get_carrier_info(mc_number, token):
-    url = "https://carrierchk.com/api/carrier"
-    params = {
-        "type": "mc",
-        "value": str(mc_number).strip(),
-        "token": token
-    }
-    # Using broader headers to match standard browser requests
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "application/json, text/plain, */*",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Referer": "https://carrierchk.com/"
-    }
+def get_target_endpoint():
+    """Define your target URL or endpoint here."""
+    # Replace or configure with your actual CarrierChk API or target URL
+    return "https://carrierchk.com/api/search" # Update as per your active route
 
-    try:
-        print(f"Requesting API for MC-{mc_number}...")
-        response = requests.get(url, params=params, headers=headers, timeout=10.0)
-        print(f"API Response Code: {response.status_code}")
-        if response.status_code == 200:
-            return response.json()
-        else:
-            print(f"Response text: {response.text}")
-    except Exception as e:
-        print(f"API request failed: {e}")
-    return None
-
-def main():
-    print("Starting background harvesting sequence...")
-    start_mc = 1800000  # Matching the active range shown in your Streamlit app
-    batch_size = 10
+def run_scraper():
+    logger.info("Initializing cloudscraper session to bypass bot protection...")
     
-    for i in range(batch_size):
-        current_mc = start_mc + i
-        print(f"Processing index {i}: MC-{current_mc}")
-        
-        raw_data = get_carrier_info(current_mc, CARRIER_TOKEN)
-        if not raw_data or "carrier" not in raw_data:
-            print(f"No valid carrier data returned for MC-{current_mc}")
-            continue
-            
-        c = raw_data.get("carrier", {})
-        email = c.get("email_address")
-        if not email:
-            print(f"Skipping MC-{current_mc}: No email found")
-            continue
-            
-        parsed = {
-            "mc_number": f"MC-{current_mc}",
-            "carrier_name": c.get("dba_name") or c.get("legal_name") or "N/A",
-            "operating_status": "🟢 ACTIVE",
-            "phone_number": c.get("phone") or "N/A",
-            "email_address": email,
-            "location": f"{c.get('phy_city', '')}, {c.get('phy_state', '')}".strip(", ")
+    # Create a cloudscraper instance to handle Cloudflare challenges
+    scraper = cloudscraper.create_scraper(
+        browser={
+            'browser': 'chrome',
+            'platform': 'windows',
+            'desktop': True
         }
-        
-        try:
-            print(f"Saving {email} to Supabase...")
-            supabase.table("harvested_leads").upsert(parsed, on_conflict="mc_number").execute()
-            print("Successfully saved!")
-        except Exception as e:
-            print(f"Supabase error: {e}")
-            
-        time.sleep(0.3)
+    )
+    
+    # Optional: If you use session tokens or authorization headers, include them here
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Referer": "https://carrierchk.com/",
+    }
 
-    print("Batch run completed successfully.")
+    url = get_target_endpoint()
+    max_retries = 3
+    retry_delay = 5
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            logger.info(f"Attempt {attempt} of {max_retries}: Fetching data from {url}")
+            
+            # Make the request using cloudscraper instead of standard requests
+            response = scraper.get(url, headers=headers, timeout=30)
+            
+            if response.status_code == 200:
+                logger.info("Successfully fetched data from target.")
+                data = response.json()
+                
+                # Process and store data in Supabase
+                process_and_store_data(data)
+                return
+                
+            elif response.status_code == 403 or response.status_code == 429:
+                logger.warning(f"Received status {response.status_code}. Possible rate limit or bot block.")
+                if attempt < max_retries:
+                    logger.info(f"Waiting {retry_delay} seconds before retrying...")
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                else:
+                    logger.error("Max retries reached. Request blocked by target server.")
+            else:
+                logger.error(f"Unexpected status code: {response.status_code} - {response.text}")
+                break
+
+        except Exception as e:
+            logger.error(f"An error occurred during scraping: {str(e)}")
+            if attempt < max_retries:
+                time.sleep(retry_delay)
+            else:
+                logger.error("Failed to complete scraping execution due to persistent errors.")
+
+def process_and_store_data(data):
+    """Processes scraped payload and pushes records safely to Supabase."""
+    try:
+        # Example parsing/insertion logic matching your pipeline
+        logger.info("Processing payload for Supabase insertion...")
+        
+        # Ensure data is structured correctly as a list of records
+        records = data if isinstance(data, list) else data.get("results", [])
+        
+        if not records:
+            logger.info("No new records found to insert.")
+            return
+
+        for record in records:
+            # Upsert or insert logic into your Supabase table
+            supabase.table("carrier_leads").upsert(record).execute()
+            
+        logger.info(f"Successfully processed and stored {len(records)} records.")
+        
+    except Exception as e:
+        logger.error(f"Database insertion error: {str(e)}")
 
 if __name__ == "__main__":
-    main()
+    run_scraper()
