@@ -1,68 +1,101 @@
-import streamlit as st
-import cloudscraper
 import os
 import time
-from supabase import create_client
+import logging
+import cloudscraper
+from supabase import create_client, Client
 
-st.title("Carrier Scraper Control Panel")
-st.write("Enter your starting MC number below and click **Start Scraping** to begin harvesting leads automatically.")
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
-start_mc = st.number_input("Starting MC Number", min_value=1, value=1066434, step=1)
-max_records = st.number_input("Max records to fetch in this batch", min_value=1, value=500, step=1)
+# Supabase Configuration
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 
-SUPABASE_URL = st.secrets.get("SUPABASE_URL", os.environ.get("SUPABASE_URL"))
-SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", os.environ.get("SUPABASE_KEY"))
-carrier_token = st.secrets.get("CARRIER_TOKEN", "3243d121943e4ea")
+if not SUPABASE_URL or not SUPABASE_KEY:
+    logger.error("Supabase credentials missing from environment variables.")
+    raise ValueError("Missing SUPABASE_URL or SUPABASE_KEY environment variables.")
 
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-if st.button("Start Scraping", type="primary"):
-    st.info(f"Starting scraper from MC #{start_mc} for {max_records} records...")
-    
+def run_continuous_scraper():
+    logger.info("Initializing cloudscraper session...")
     scraper = cloudscraper.create_scraper(
-        browser={'browser': 'chrome', 'platform': 'windows', 'desktop': True}
+        browser={
+            'browser': 'chrome',
+            'platform': 'windows',
+            'desktop': True
+        }
     )
+    
+    url = "https://carrierchk.com/api/carrier"
+    token = "3243d1219423e4ea"
+    
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Referer": "https://carrierchk.com/",
     }
 
-    progress_bar = st.progress(0)
-    success_count = 0
+    start_mc = 123450 
+    max_consecutive_misses = 10
+    consecutive_misses = 0
 
-    for i in range(max_records):
-        current_mc_num = start_mc + i
-        # Trying URL path parameter structure often used by REST APIs
-        url = f"https://carrierchk.com/api/carrier/{current_mc_num}"
-        params = {"token": carrier_token}
+    logger.info(f"Starting continuous scraping loop from MC: {start_mc}")
+
+    current_mc = start_mc
+    while True:
+        params = {
+            "type": "mc",
+            "value": str(current_mc),
+            "token": token
+        }
         
-        while True:
-            try:
-                response = scraper.get(url, params=params, headers=headers)
-                if response.status_code == 200:
-                    data = response.json()
-                    if data and "carrier" in data:
-                        carrier_info = data["carrier"]
-                        supabase.table("harvested_leads").insert(carrier_info).execute()
-                        success_count += 1
-                        st.success(f"Successfully saved MC #{current_mc_num}")
-                    else:
-                        st.info(f"MC #{current_mc_num} has no carrier data, skipping.")
-                    break  
-                elif response.status_code == 404:
-                    st.warning(f"MC #{current_mc_num} not found (404), skipping...")
-                    break  
-                elif response.status_code == 429:
-                    st.warning(f"Rate limited (429) on MC #{current_mc_num}. Cooling down for 10 seconds...")
-                    time.sleep(10)  
+        try:
+            logger.info(f"Querying MC #{current_mc}...")
+            response = scraper.get(url, params=params, headers=headers, timeout=30)
+            
+            if response.status_code == 200:
+                data = response.json()
+                carrier_info = data.get("carrier")
+                
+                if carrier_info and carrier_info.get("legal_name"):
+                    # Build full location string (City, State)
+                    city = carrier_info.get("phy_city", "")
+                    state = carrier_info.get("phy_state", "")
+                    location_str = f"{city}, {state}".strip(", ")
+
+                    # Map all available fields into Supabase columns
+                    record = {
+                        "mc_number": str(current_mc),
+                        "carrier_name": carrier_info.get("legal_name", "Unknown Carrier"),
+                        "operating_status": carrier_info.get("status_code", "Active"),
+                        "phone_number": carrier_info.get("phone"),
+                        "email_address": carrier_info.get("email_address"),
+                        "location": location_str
+                    }
+                    
+                    supabase.table("harvested_leads").upsert(record, on_conflict="mc_number").execute()
+                    logger.info(f"Saved: MC {current_mc} - {carrier_info.get('legal_name')}")
+                    consecutive_misses = 0
                 else:
-                    st.warning(f"MC #{current_mc_num}: Server returned status {response.status_code}. Retrying...")
-                    time.sleep(3)
-            except Exception as e:
-                st.error(f"Error on MC #{current_mc_num}: {e}. Retrying...")
-                time.sleep(3)
-        
-        progress_bar.progress((i + 1) / max_records)
-        time.sleep(2)  
+                    logger.info(f"No active record found for MC {current_mc}")
+                    consecutive_misses += 1
+            else:
+                logger.warning(f"API returned status code {response.status_code} for MC {current_mc}")
+                consecutive_misses += 1
 
-    st.success(f"Scraping completed! Successfully harvested {success_count} records.")
+            if consecutive_misses >= max_consecutive_misses:
+                logger.info(f"Reached {max_consecutive_misses} empty results in a row. Pausing loop.")
+                break
+
+        except Exception as e:
+            logger.error(f"Error querying MC {current_mc}: {str(e)}")
+        
+        current_mc += 1
+        time.sleep(1.5)
+
+if __name__ == "__main__":
+    run_continuous_scraper()
