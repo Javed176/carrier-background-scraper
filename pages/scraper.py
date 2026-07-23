@@ -22,11 +22,9 @@ if st.button("Start Scraping", type="primary"):
     scraper = cloudscraper.create_scraper(
         browser={'browser': 'chrome', 'platform': 'windows', 'desktop': True}
     )
-    url = "https://carrierchk.com/api/carrier"
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Referer": "https://carrierchk.com/",
-        "Content-Type": "application/json"
     }
 
     progress_bar = st.progress(0)
@@ -34,17 +32,13 @@ if st.button("Start Scraping", type="primary"):
 
     for i in range(max_records):
         current_mc_num = start_mc + i
-        
-        # Trying payload fields commonly used by carrierchk API
-        payload = {
-            "mc": str(current_mc_num),
-            "mcNumber": str(current_mc_num),
-            "token": carrier_token
-        }
+        # Trying URL path parameter structure often used by REST APIs
+        url = f"https://carrierchk.com/api/carrier/{current_mc_num}"
+        params = {"token": carrier_token}
         
         while True:
             try:
-                response = scraper.post(url, json=payload, headers=headers)
+                response = scraper.get(url, params=params, headers=headers)
                 if response.status_code == 200:
                     data = response.json()
                     if data and "carrier" in data:
