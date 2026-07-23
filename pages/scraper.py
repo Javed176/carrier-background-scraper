@@ -2,6 +2,7 @@ import streamlit as st
 import cloudscraper
 import os
 import time
+import pandas as pd
 from supabase import create_client
 
 st.title("Carrier Scraper Control Panel")
@@ -45,7 +46,6 @@ if st.button("Start Scraping", type="primary"):
             "token": carrier_token
         }
         
-        # Keep trying this specific MC number until it succeeds or returns a clear non-rate-limit response
         while True:
             try:
                 response = scraper.get(url, params=params, headers=headers, timeout=30)
@@ -79,13 +79,13 @@ if st.button("Start Scraping", type="primary"):
                         st.success(f"Saved: {formatted_mc} - {carrier_info.get('legal_name')}")
                     else:
                         st.info(f"No active record found for {formatted_mc}")
-                    break  # Success or confirmed empty, move to next MC
+                    break  
                     
                 elif response.status_code == 429:
-                    st.warning(f"Rate limited (429) on {formatted_mc}. Waiting until API clears before retrying...")
-                    time.sleep(10)  # Wait and loop back to retry the same request
+                    st.warning(f"Rate limited (429) on {formatted_mc}. Waiting 10s for API to clear...")
+                    time.sleep(10)  
                 else:
-                    st.warning(f"API returned status code {response.status_code} for {formatted_mc}. Retrying in 5s...")
+                    st.warning(f"API returned status {response.status_code} for {formatted_mc}. Retrying in 5s...")
                     time.sleep(5)
                     
             except Exception as e:
@@ -94,6 +94,31 @@ if st.button("Start Scraping", type="primary"):
         
         progress_bar.progress((i + 1) / max_records)
         current_mc += 1
-        time.sleep(2)  # Standard polite buffer between successful items
+        time.sleep(3)  # Polite pacing delay to prevent triggering continuous 429 rate limits
 
     st.success(f"Batch completed! Successfully harvested {success_count} records.")
+
+st.markdown("---")
+st.subheader("Master History Sheet & Downloads")
+
+# Fetch data from Supabase to view and download
+try:
+    response = supabase.table("harvested_leads").select("*").execute()
+    data = response.data
+    
+    if data:
+        df = pd.DataFrame(data)
+        st.dataframe(df, use_container_width=True)
+        
+        csv_data = df.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📥 Export Master Sheet to CSV",
+            data=csv_data,
+            file_name="harvested_carriers.csv",
+            mime="text/csv",
+            type="primary"
+        )
+    else:
+        st.info("No records found in the database yet. Run the scraper above to harvest leads.")
+except Exception as e:
+    st.error(f"Could not load data from Supabase: {e}")
