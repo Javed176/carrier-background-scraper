@@ -1,13 +1,13 @@
 import streamlit as st
 import cloudscraper
 import os
+import time
 from supabase import create_client
 
 st.title("Carrier Scraper Control Panel")
 st.write("Enter your starting MC number below and click **Start Scraping** to begin harvesting leads automatically.")
 
 start_mc = st.number_input("Starting MC Number", min_value=1, value=1066434, step=1)
-# Changed from a slider to a number input allowing you to type custom limits
 max_records = st.number_input("Max records to fetch in this batch", min_value=1, value=500, step=1)
 
 SUPABASE_URL = st.secrets.get("SUPABASE_URL", os.environ.get("SUPABASE_URL"))
@@ -35,20 +35,29 @@ if st.button("Start Scraping", type="primary"):
         current_mc = start_mc + i
         payload = {"mcNumber": str(current_mc), "token": carrier_token}
         
-        try:
-            response = scraper.post(url, json=payload, headers=headers)
-            if response.status_code == 200:
-                data = response.json()
-                if data and "carrier" in data:
-                    carrier_info = data["carrier"]
-                    # Insert into Supabase
-                    insert_res = supabase.table("harvested_leads").insert(carrier_info).execute()
-                    success_count += 1
-            else:
-                st.warning(f"Skipping MC {current_mc}: Server returned status {response.status_code}")
-        except Exception as e:
-            st.error(f"Error on MC {current_mc}: {e}")
+        # Retry loop to ensure it waits until details are successfully fetched
+        while True:
+            try:
+                response = scraper.post(url, json=payload, headers=headers)
+                if response.status_code == 200:
+                    data = response.json()
+                    if data and "carrier" in data:
+                        carrier_info = data["carrier"]
+                        supabase.table("harvested_leads").insert(carrier_info).execute()
+                        success_count += 1
+                        st.success(f"Successfully saved MC #{current_mc}")
+                    break  # Success, exit the retry loop and move to next MC
+                elif response.status_code == 429:
+                    st.warning(f"Rate limited (429) on MC {current_mc}. Waiting 5 seconds before retrying...")
+                    time.sleep(5)  # Wait longer and retry the same MC
+                else:
+                    st.warning(f"MC {current_mc}: Server returned status {response.status_code}. Retrying in 3 seconds...")
+                    time.sleep(3)
+            except Exception as e:
+                st.error(f"Error on MC {current_mc}: {e}. Retrying in 3 seconds...")
+                time.sleep(3)
         
         progress_bar.progress((i + 1) / max_records)
+        time.sleep(1)  # Brief polite buffer between successful requests
 
     st.success(f"Scraping completed! Successfully harvested {success_count} records.")
