@@ -342,7 +342,7 @@ if not show_admin_panel:
 
   st.markdown("---")
 
-  # --- DATABASE MAINTENANCE (DELETE OLD DATA BUTTONS) ---
+  # --- DATABASE MAINTENANCE ---
   st.subheader("🗑️ Database Maintenance")
   st.write("Clear out old historical data or logs from your database.")
 
@@ -357,20 +357,20 @@ if not show_admin_panel:
         st.error(f"Error: {e}")
 
   with col_m2:
-    if st.button("🗑️ Clear Carrier Data Table", type="primary"):
+    if st.button("🗑️ Clear Harvested Leads Table", type="primary"):
       try:
-        supabase.table("carriers").delete().neq("id", 0).execute()
-        st.success("Carrier data table cleared successfully!")
+        supabase.table("harvested_leads").delete().neq("id", 0).execute()
+        st.success("Harvested leads table cleared successfully!")
         st.rerun()
       except Exception as e:
-        st.error(f"Error clearing carrier table: {e}")
+        st.error(f"Error clearing table: {e}")
 
   st.markdown("---")
   st.subheader("📋 Master History Sheet (Harvested Carriers)")
 
   try:
     carriers_res = (
-        supabase.table("carriers")
+        supabase.table("harvested_leads")
         .select("*")
         .order("created_at", desc=True)
         .limit(100)
@@ -384,6 +384,6 @@ if not show_admin_panel:
       )
   except Exception as e:
     st.info(
-        "Could not load carriers table. Make sure your table name matches"
-        " (e.g., 'carriers')."
+        "Could not load harvested_leads table. Make sure your table name"
+        " matches."
     )
