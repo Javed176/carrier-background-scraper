@@ -99,7 +99,7 @@ def get_crawler_state():
       return res.data[0]
   except Exception:
     pass
-  return {"current_mc": 1066434, "is_running": False}
+  return {"current_mc": 1800000, "is_running": False}
 
 
 def update_crawler_state(current_mc, is_running):
@@ -123,10 +123,10 @@ if "is_admin" not in st.session_state:
 if "login_time" not in st.session_state:
   st.session_state.login_time = None
 
-# Initialize independent session input for starting MC so it never overwrites while typing
-if "manual_mc_target" not in st.session_state:
+# Initialize session input for starting MC so it never overwrites while typing
+if "mc_input_str" not in st.session_state:
   state_init = get_crawler_state()
-  st.session_state.manual_mc_target = str(state_init["current_mc"])
+  st.session_state.mc_input_str = str(state_init["current_mc"])
 
 if "last_db_check" not in st.session_state:
   st.session_state.last_db_check = 0.0
@@ -319,15 +319,14 @@ if not show_admin_panel:
   with col_st2:
     st.metric("Enforced Speed Limit", speed_mode_string)
 
-  # Stable Input field bound safely to session state so it doesn't revert while typing
+  # Stable Input field bound to independent session state to prevent typing resets
   new_mc_input = st.text_input(
-      "Set / Reset Starting MC Number:",
-      key="manual_mc_target"
+      "Set / Reset Starting MC Number:", key="mc_input_str"
   )
 
   col_btn1, col_btn2 = st.columns(2)
   if col_btn1.button("🚀 Start 24/7 Cloud Sequence", use_container_width=True):
-    target_mc = str(st.session_state.manual_mc_target).strip()
+    target_mc = str(st.session_state.mc_input_str).strip()
     if target_mc.isdigit():
       update_crawler_state(int(target_mc), True)
       log_activity(
@@ -354,28 +353,42 @@ if not show_admin_panel:
 
   # --- METRICS & COUNTERS (ROBUST FILTERING) ---
   try:
-    all_leads_res = supabase.table("harvested_leads").select("*", count="exact").execute()
-    total_records = all_leads_res.count if all_leads_res.count is not None else len(all_leads_res.data)
-    
+    all_leads_res = (
+        supabase.table("harvested_leads").select("*", count="exact").execute()
+    )
+    total_records = (
+        all_leads_res.count
+        if all_leads_res.count is not None
+        else len(all_leads_res.data)
+    )
+
     df_all = pd.DataFrame(all_leads_res.data) if all_leads_res.data else pd.DataFrame()
-    
+
     if not df_all.empty:
       df_all.columns = [str(c).lower().strip() for c in df_all.columns]
-      
-      status_col = "operating_status" if "operating_status" in df_all.columns else ("status" if "status" in df_all.columns else None)
-      email_col = "email_address" if "email_address" in df_all.columns else ("email" if "email" in df_all.columns else None)
-      
+
+      status_col = (
+          "operating_status"
+          if "operating_status" in df_all.columns
+          else ("status" if "status" in df_all.columns else None)
+      )
+      email_col = (
+          "email_address"
+          if "email_address" in df_all.columns
+          else ("email" if "email" in df_all.columns else None)
+      )
+
       if status_col and email_col:
         df_verified = df_all[
-            (df_all[status_col].astype(str).str.upper().str.contains("ACTIVE|A")) & 
-            (df_all[email_col].notna()) & 
-            (df_all[email_col].astype(str).str.strip() != "") &
-            (df_all[email_col].astype(str).str.lower() != "none") &
-            (df_all[email_col].astype(str).str.lower() != "nan")
+            (df_all[status_col].astype(str).str.upper().str.contains("ACTIVE|A"))
+            & (df_all[email_col].notna())
+            & (df_all[email_col].astype(str).str.strip() != "")
+            & (df_all[email_col].astype(str).str.lower() != "none")
+            & (df_all[email_col].astype(str).str.lower() != "nan")
         ]
       else:
         df_verified = pd.DataFrame()
-        
+
       verified_count = len(df_verified)
     else:
       verified_count = 0
@@ -408,14 +421,20 @@ if not show_admin_panel:
   st.markdown("---")
 
   # --- TABS FOR TABLES ---
-  tab_verified, tab_all = st.tabs(["✅ Verified Active Emails", "📋 Master History Sheet"])
+  tab_verified, tab_all = st.tabs(
+      ["✅ Verified Active Emails", "📋 Master History Sheet"]
+  )
 
   with tab_verified:
     st.subheader("✅ Verified Active Carriers (Active Status + Valid Email)")
     if not df_verified.empty:
       st.dataframe(df_verified, use_container_width=True)
     else:
-      st.info("No verified active carriers with emails found yet. Once your crawler scrapes active carriers with valid email entries, they will appear here automatically.")
+      st.info(
+          "No verified active carriers with emails found yet. Once your crawler"
+          " scrapes active carriers with valid email entries, they will appear"
+          " here automatically."
+      )
 
   with tab_all:
     st.subheader("📋 Master History Sheet (All Harvested Records)")
