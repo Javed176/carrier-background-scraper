@@ -59,7 +59,6 @@ if st.button("Start Scraping", type="primary"):
                         state = carrier_info.get("phy_state", "")
                         location_str = f"{city}, {state}".strip(", ")
 
-                        # Fixed status check for shorthand codes ('A' = Active)
                         raw_status = str(carrier_info.get("status_code", "A")).upper()
                         if raw_status == "A" or "ACTIVE" in raw_status:
                             status_str = "🟢 ACTIVE"
@@ -100,34 +99,77 @@ if st.button("Start Scraping", type="primary"):
     st.success(f"Batch completed! Successfully harvested {success_count} records.")
 
 st.markdown("---")
-st.subheader("Master History Sheet & Downloads")
 
-# Fetch data from Supabase to view and manage
-try:
-    response = supabase.table("harvested_leads").select("*").execute()
-    data = response.data
-    
-    if data:
-        df = pd.DataFrame(data)
-        st.dataframe(df, use_container_width=True)
+# Navigation Tabs inside the App View
+tab1, tab2 = st.tabs(["📋 Complete Master Log", "🎯 Verified Leads (Active Only)"])
+
+with tab1:
+    st.subheader("Master History Sheet")
+    try:
+        response = supabase.table("harvested_leads").select("*").execute()
+        data = response.data
         
-        col1, col2 = st.columns(2)
-        with col1:
-            csv_data = df.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="📥 Export Master Sheet to CSV",
-                data=csv_data,
-                file_name="harvested_carriers.csv",
-                mime="text/csv",
-                type="primary"
-            )
-        with col2:
-            if st.button("🗑️ Clear / Delete All Stored Data", type="secondary"):
-                # Delete all rows in harvested_leads where mc_number is not null
-                supabase.table("harvested_leads").delete().neq("mc_number", "NONE").execute()
-                st.success("All data cleared successfully! Refresh the page to update view.")
-                st.rerun()
-    else:
-        st.info("No records found in the database yet. Run the scraper above to harvest leads.")
-except Exception as e:
-    st.error(f"Could not load data from Supabase: {e}")
+        if data:
+            df = pd.DataFrame(data)
+            st.dataframe(df, use_container_width=True)
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                csv_data = df.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="📥 Export Master Sheet to CSV",
+                    data=csv_data,
+                    file_name="master_carriers.csv",
+                    mime="text/csv",
+                    type="primary",
+                    key="download_master"
+                )
+            with col2:
+                if st.button("🗑️ Clear All Stored Data", type="secondary", key="clear_db"):
+                    supabase.table("harvested_leads").delete().neq("mc_number", "NONE").execute()
+                    st.success("Database cleared successfully!")
+                    st.rerun()
+        else:
+            st.info("No records found in the database yet.")
+    except Exception as e:
+        st.error(f"Could not load data: {e}")
+
+with tab2:
+    st.subheader("Clean Target Pitch Sheet")
+    try:
+        response = supabase.table("harvested_leads").select("*").execute()
+        data = response.data
+        
+        if data:
+            df = pd.DataFrame(data)
+            
+            # Filter strictly for ACTIVE status and records that contain a valid email address
+            active_df = df[
+                df["operating_status"].str.contains("ACTIVE", na=False) & 
+                df["email_address"].notnull() & 
+                (df["email_address"].str.strip() != "")
+            ].copy()
+            
+            total_records = len(df)
+            verified_count = len(active_df)
+            
+            st.success(f"📊 Total Database Records: **{total_records}** | 🎯 Filtered Active Verified Carrier Targets: **{verified_count}**")
+            
+            if not active_df.empty:
+                st.dataframe(active_df, use_container_width=True)
+                
+                clean_csv = active_df.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="📥 Export Clean Email Pitch Sheet to CSV",
+                    data=clean_csv,
+                    file_name="verified_active_carriers.csv",
+                    mime="text/csv",
+                    type="primary",
+                    key="download_verified"
+                )
+            else:
+                st.warning("No active carriers with valid email addresses found yet.")
+        else:
+            st.info("No records found in the database yet.")
+    except Exception as e:
+        st.error(f"Could not load verified data: {e}")
