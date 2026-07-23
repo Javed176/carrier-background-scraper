@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from supabase import create_client, Client
 import os
+import cloudscraper
 
 # Initialize connection to Supabase
 SUPABASE_URL = os.environ.get("SUPABASE_URL") or st.secrets.get("SUPABASE_URL")
@@ -33,14 +34,48 @@ b_col1, b_col2, _ = st.columns([1, 1, 4])
 with b_col1:
     if st.button("Start Scraping", type="primary", use_container_width=True):
         st.session_state.is_running = True
+        st.rerun()
 
 with b_col2:
     if st.button("Stop Scraping", use_container_width=True):
         st.session_state.is_running = False
+        st.rerun()
 
-# Status display
+# Status display & Scraping Loop
 if st.session_state.is_running:
     st.info(f"Starting scraper from MC #{current_mc} for {max_records} records...")
+    
+    scraper = cloudscraper.create_scraper()
+    
+    for i in range(max_records):
+        if not st.session_state.is_running:
+            st.warning("Scraping stopped by user.")
+            break
+            
+        target_mc = current_mc + i
+        
+        try:
+            # ---> Insert your cloudscraper request logic here <---
+            # Example: response = scraper.get(f"https://api.example.com/carrier/{target_mc}")
+            
+            company_name = f"COMPANY-{target_mc}" # Replace with parsed data from response
+            status = "Active"                  # Replace with parsed status
+            
+            # Save to Supabase carriers table
+            data_to_insert = {
+                "mc_number": str(target_mc),
+                "company_name": company_name,
+                "status": status
+            }
+            supabase.table("carriers").insert(data_to_insert).execute()
+            
+            st.success(f"Saved: MC-{target_mc} - {company_name}")
+            
+        except Exception as e:
+            st.error(f"Error fetching MC {target_mc}: {e}")
+            
+    # Reset running state when batch completes
+    st.session_state.is_running = False
 else:
     st.warning("Scraper is currently stopped.")
 
