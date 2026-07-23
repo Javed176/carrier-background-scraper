@@ -33,9 +33,8 @@ if st.button("Start Scraping", type="primary"):
 
     for i in range(max_records):
         current_mc_num = start_mc + i
-        # Formatting as requested by API (e.g., matching standard MC prefix format if needed)
-        formatted_mc = f"MC-{current_mc_num}"
-        payload = {"mcNumber": formatted_mc, "token": carrier_token}
+        # API expects raw string number without prefix
+        payload = {"mcNumber": str(current_mc_num), "token": carrier_token}
         
         while True:
             try:
@@ -46,24 +45,24 @@ if st.button("Start Scraping", type="primary"):
                         carrier_info = data["carrier"]
                         supabase.table("harvested_leads").insert(carrier_info).execute()
                         success_count += 1
-                        st.success(f"Successfully saved {formatted_mc}")
+                        st.success(f"Successfully saved MC #{current_mc_num}")
                     else:
-                        st.info(f"{formatted_mc} has no carrier data, skipping.")
+                        st.info(f"MC #{current_mc_num} has no carrier data, skipping.")
                     break  
                 elif response.status_code == 404:
-                    st.warning(f"{formatted_mc} not found (404), skipping to next...")
+                    st.warning(f"MC #{current_mc_num} not found (404), skipping to next...")
                     break  
                 elif response.status_code == 429:
-                    st.warning(f"Rate limited (429) on {formatted_mc}. Waiting 5 seconds...")
-                    time.sleep(5)  
+                    st.warning(f"Rate limited (429) on MC #{current_mc_num}. Cooling down for 10 seconds...")
+                    time.sleep(10)  # Longer cooldown to let rate limit clear
                 else:
-                    st.warning(f"{formatted_mc}: Server returned status {response.status_code}. Retrying...")
+                    st.warning(f"MC #{current_mc_num}: Server returned status {response.status_code}. Retrying...")
                     time.sleep(3)
             except Exception as e:
-                st.error(f"Error on {formatted_mc}: {e}. Retrying...")
+                st.error(f"Error on MC #{current_mc_num}: {e}. Retrying...")
                 time.sleep(3)
         
         progress_bar.progress((i + 1) / max_records)
-        time.sleep(1)  
+        time.sleep(3)  # Safe buffer between requests to prevent hitting 429s
 
     st.success(f"Scraping completed! Successfully harvested {success_count} records.")
