@@ -21,25 +21,30 @@ def get_carrier_info(mc_number, token):
         "value": str(mc_number).strip(),
         "token": token
     }
+    # Using broader headers to match standard browser requests
     headers = {
-        "User-Agent": "Mozilla/5.0",
-        "Accept": "application/json"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Referer": "https://carrierchk.com/"
     }
 
     try:
         print(f"Requesting API for MC-{mc_number}...")
-        response = requests.get(url, params=params, headers=headers, timeout=5.0)
+        response = requests.get(url, params=params, headers=headers, timeout=10.0)
         print(f"API Response Code: {response.status_code}")
         if response.status_code == 200:
             return response.json()
+        else:
+            print(f"Response text: {response.text}")
     except Exception as e:
         print(f"API request failed: {e}")
     return None
 
 def main():
     print("Starting background harvesting sequence...")
-    start_mc = 1066434
-    batch_size = 5  # Let's test with a small batch first to verify it flows through instantly
+    start_mc = 1800000  # Matching the active range shown in your Streamlit app
+    batch_size = 10
     
     for i in range(batch_size):
         current_mc = start_mc + i
@@ -72,7 +77,7 @@ def main():
         except Exception as e:
             print(f"Supabase error: {e}")
             
-        time.sleep(0.2)
+        time.sleep(0.3)
 
     print("Batch run completed successfully.")
 
