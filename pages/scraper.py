@@ -26,6 +26,7 @@ if st.button("Start Scraping", type="primary"):
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Referer": "https://carrierchk.com/",
+        "Content-Type": "application/json"
     }
 
     progress_bar = st.progress(0)
@@ -33,8 +34,13 @@ if st.button("Start Scraping", type="primary"):
 
     for i in range(max_records):
         current_mc_num = start_mc + i
-        # API expects raw string number without prefix
-        payload = {"mcNumber": str(current_mc_num), "token": carrier_token}
+        
+        # Trying payload fields commonly used by carrierchk API
+        payload = {
+            "mc": str(current_mc_num),
+            "mcNumber": str(current_mc_num),
+            "token": carrier_token
+        }
         
         while True:
             try:
@@ -50,11 +56,11 @@ if st.button("Start Scraping", type="primary"):
                         st.info(f"MC #{current_mc_num} has no carrier data, skipping.")
                     break  
                 elif response.status_code == 404:
-                    st.warning(f"MC #{current_mc_num} not found (404), skipping to next...")
+                    st.warning(f"MC #{current_mc_num} not found (404), skipping...")
                     break  
                 elif response.status_code == 429:
                     st.warning(f"Rate limited (429) on MC #{current_mc_num}. Cooling down for 10 seconds...")
-                    time.sleep(10)  # Longer cooldown to let rate limit clear
+                    time.sleep(10)  
                 else:
                     st.warning(f"MC #{current_mc_num}: Server returned status {response.status_code}. Retrying...")
                     time.sleep(3)
@@ -63,6 +69,6 @@ if st.button("Start Scraping", type="primary"):
                 time.sleep(3)
         
         progress_bar.progress((i + 1) / max_records)
-        time.sleep(3)  # Safe buffer between requests to prevent hitting 429s
+        time.sleep(2)  
 
     st.success(f"Scraping completed! Successfully harvested {success_count} records.")
