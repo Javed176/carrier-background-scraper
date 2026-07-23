@@ -38,60 +38,62 @@ if st.button("Start Scraping", type="primary"):
     current_mc = start_mc
 
     for i in range(max_records):
-        # Format with zero-padding (e.g., 9 digits: 001066434) and MC- prefix
-        # Change `09d` to whatever length or format you prefer (e.g., `06d` or just `{current_mc}`)
-        padded_num = f"{current_mc:09d}"
-        formatted_mc = f"MC-{padded_num}"
-        
+        formatted_mc = f"MC-{current_mc}"
         params = {
             "type": "mc",
             "value": str(current_mc),
             "token": carrier_token
         }
         
-        try:
-            response = scraper.get(url, params=params, headers=headers, timeout=30)
-            
-            if response.status_code == 200:
-                data = response.json()
-                carrier_info = data.get("carrier")
+        # Keep trying this specific MC number until it succeeds or returns a clear non-rate-limit response
+        while True:
+            try:
+                response = scraper.get(url, params=params, headers=headers, timeout=30)
                 
-                if carrier_info and carrier_info.get("legal_name"):
-                    city = carrier_info.get("phy_city", "")
-                    state = carrier_info.get("phy_state", "")
-                    location_str = f"{city}, {state}".strip(", ")
-
-                    raw_status = carrier_info.get("status_code", "ACTIVE").upper()
-                    if "ACTIVE" in raw_status:
-                        status_str = "🟢 ACTIVE"
-                    else:
-                        status_str = f"🔴 {raw_status}"
-
-                    record = {
-                        "mc_number": formatted_mc,
-                        "carrier_name": carrier_info.get("legal_name", "Unknown Carrier"),
-                        "operating_status": status_str,
-                        "phone_number": carrier_info.get("phone"),
-                        "email_address": carrier_info.get("email_address"),
-                        "location": location_str
-                    }
+                if response.status_code == 200:
+                    data = response.json()
+                    carrier_info = data.get("carrier")
                     
-                    supabase.table("harvested_leads").upsert(record, on_conflict="mc_number").execute()
-                    success_count += 1
-                    st.success(f"Saved: {formatted_mc} - {carrier_info.get('legal_name')}")
+                    if carrier_info and carrier_info.get("legal_name"):
+                        city = carrier_info.get("phy_city", "")
+                        state = carrier_info.get("phy_state", "")
+                        location_str = f"{city}, {state}".strip(", ")
+
+                        raw_status = carrier_info.get("status_code", "ACTIVE").upper()
+                        if "ACTIVE" in raw_status:
+                            status_str = "🟢 ACTIVE"
+                        else:
+                            status_str = f"🔴 {raw_status}"
+
+                        record = {
+                            "mc_number": formatted_mc,
+                            "carrier_name": carrier_info.get("legal_name", "Unknown Carrier"),
+                            "operating_status": status_str,
+                            "phone_number": carrier_info.get("phone"),
+                            "email_address": carrier_info.get("email_address"),
+                            "location": location_str
+                        }
+                        
+                        supabase.table("harvested_leads").upsert(record, on_conflict="mc_number").execute()
+                        success_count += 1
+                        st.success(f"Saved: {formatted_mc} - {carrier_info.get('legal_name')}")
+                    else:
+                        st.info(f"No active record found for {formatted_mc}")
+                    break  # Success or confirmed empty, move to next MC
+                    
+                elif response.status_code == 429:
+                    st.warning(f"Rate limited (429) on {formatted_mc}. Waiting until API clears before retrying...")
+                    time.sleep(10)  # Wait and loop back to retry the same request
                 else:
-                    st.info(f"No active record found for {formatted_mc}")
-            elif response.status_code == 429:
-                st.warning(f"Rate limited (429) on {formatted_mc}. Pausing 10s...")
-                time.sleep(10)
-            else:
-                st.warning(f"API returned status code {response.status_code} for {formatted_mc}")
-                
-        except Exception as e:
-            st.error(f"Error querying {formatted_mc}: {str(e)}")
+                    st.warning(f"API returned status code {response.status_code} for {formatted_mc}. Retrying in 5s...")
+                    time.sleep(5)
+                    
+            except Exception as e:
+                st.error(f"Error querying {formatted_mc}: {str(e)}. Retrying in 5s...")
+                time.sleep(5)
         
         progress_bar.progress((i + 1) / max_records)
         current_mc += 1
-        time.sleep(1.5)
+        time.sleep(2)  # Standard polite buffer between successful items
 
     st.success(f"Batch completed! Successfully harvested {success_count} records.")
