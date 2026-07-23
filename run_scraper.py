@@ -32,16 +32,15 @@ def run_continuous_scraper():
     )
     
     url = "https://carrierchk.com/api/carrier"
-    token = "3243d1219423e4ea" # Or use os.environ.get("CARRIER_TOKEN")
+    token = "3243d1219423e4ea"
     
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Referer": "https://carrierchk.com/",
     }
 
-    # Starting MC number (you can adjust this starting point)
     start_mc = 123450 
-    max_consecutive_misses = 10  # Stops if it hits 10 empty numbers in a row
+    max_consecutive_misses = 10
     consecutive_misses = 0
 
     logger.info(f"Starting continuous scraping loop from MC: {start_mc}")
@@ -63,15 +62,24 @@ def run_continuous_scraper():
                 carrier_info = data.get("carrier")
                 
                 if carrier_info and carrier_info.get("legal_name"):
-                    # Valid carrier found, save to Supabase
+                    # Build full location string (City, State)
+                    city = carrier_info.get("phy_city", "")
+                    state = carrier_info.get("phy_state", "")
+                    location_str = f"{city}, {state}".strip(", ")
+
+                    # Map all available fields into Supabase columns
                     record = {
                         "mc_number": str(current_mc),
                         "carrier_name": carrier_info.get("legal_name", "Unknown Carrier"),
-                        "operating_status": carrier_info.get("status_code", "Active")
+                        "operating_status": carrier_info.get("status_code", "Active"),
+                        "phone_number": carrier_info.get("phone"),
+                        "email_address": carrier_info.get("email_address"),
+                        "location": location_str
                     }
-                    supabase.table("harvested_leads").upsert(record).execute()
+                    
+                    supabase.table("harvested_leads").upsert(record, on_conflict="mc_number").execute()
                     logger.info(f"Saved: MC {current_mc} - {carrier_info.get('legal_name')}")
-                    consecutive_misses = 0 # Reset miss counter
+                    consecutive_misses = 0
                 else:
                     logger.info(f"No active record found for MC {current_mc}")
                     consecutive_misses += 1
@@ -79,7 +87,6 @@ def run_continuous_scraper():
                 logger.warning(f"API returned status code {response.status_code} for MC {current_mc}")
                 consecutive_misses += 1
 
-            # Safety break if it runs through too many missing/invalid numbers consecutively
             if consecutive_misses >= max_consecutive_misses:
                 logger.info(f"Reached {max_consecutive_misses} empty results in a row. Pausing loop.")
                 break
@@ -87,10 +94,7 @@ def run_continuous_scraper():
         except Exception as e:
             logger.error(f"Error querying MC {current_mc}: {str(e)}")
         
-        # Increment to the next MC number
         current_mc += 1
-        
-        # Short polite delay between requests to avoid triggering rate limits
         time.sleep(1.5)
 
 if __name__ == "__main__":
