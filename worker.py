@@ -17,7 +17,7 @@ def get_carrier_info(mc_number, token):
     if response.status_code == 200:
       return response.json()
   except Exception as e:
-    print(f"API connection error for MC-{mc_number}: {e}")
+    print(f"API request error for MC-{mc_number}: {e}")
   return None
 
 
@@ -26,10 +26,10 @@ def main_loop():
 
   while True:
     current_mc = 1800000
-    is_running = True
+    is_running = False
 
     try:
-      # Fetch live state from Supabase
+      # 1. Fetch live state from Supabase
       state_res = (
           supabase.table("crawler_state").select("*").eq("id", 1).execute()
       )
@@ -37,13 +37,26 @@ def main_loop():
         current_mc = int(state_res.data[0]["current_mc"])
         is_running = state_res.data[0]["is_running"]
 
+      # 2. If paused from Streamlit, wait and re-check
       if not is_running:
         time.sleep(3)
         continue
 
+      # 3. Fetch system throttle delay
+      delay_ms = 250.0
+      try:
+        cfg_res = supabase.table("system_config").select("*").execute()
+        if cfg_res.data:
+          for row in cfg_res.data:
+            if row["key"] == "throttle_delay_ms":
+              delay_ms = float(row["value"])
+      except Exception:
+        pass
+
       print(f"Harvester processing MC-{current_mc}...")
       carrier_data = get_carrier_info(str(current_mc), CARRIER_TOKEN)
 
+      # 4. Save to database if data exists
       if carrier_data:
         try:
           supabase.table("harvested_leads").insert({
@@ -57,17 +70,18 @@ def main_loop():
         except Exception:
           pass
 
-      # Always advance the pointer even if the request fails, so it doesn't get stuck
+      # 5. Move counter forward in Supabase
       next_mc = current_mc + 1
       supabase.table("crawler_state").update({"current_mc": next_mc}).eq(
           "id", 1
       ).execute()
 
-      time.sleep(0.5)
+      # 6. Respect speed throttle
+      time.sleep(max(0.35, delay_ms / 1000.0))
 
     except Exception as e:
-      print(f"Loop exception caught, continuing: {e}")
-      # Safely increment past the broken block so it doesn't freeze
+      print(f"Worker loop exception: {e}")
+      # Force increment past error so it never gets permanently stuck
       try:
         supabase.table("crawler_state").update(
             {"current_mc": current_mc + 1}
