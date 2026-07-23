@@ -314,21 +314,27 @@ if not show_admin_panel:
   with col_st2:
     st.metric("Enforced Speed Limit", speed_mode_string)
 
+  # Fixed Input field binding using a key for immediate session tracking
   new_mc_input = st.text_input(
-      "Set / Reset Starting MC Number:", value=str(current_mc_val)
+      "Set / Reset Starting MC Number:",
+      value=str(current_mc_val),
+      key="mc_input_field"
   )
 
   col_btn1, col_btn2 = st.columns(2)
   if col_btn1.button("🚀 Start 24/7 Cloud Sequence", use_container_width=True):
-    if new_mc_input.isdigit():
-      update_crawler_state(int(new_mc_input), True)
+    target_mc = st.session_state.get("mc_input_field", str(current_mc_val))
+    if target_mc.isdigit():
+      update_crawler_state(int(target_mc), True)
       log_activity(
           st.session_state.current_user,
           "start_cloud_crawler",
-          f"Resumed/Started at MC-{new_mc_input}",
+          f"Resumed/Started at MC-{target_mc}",
       )
-      st.success("Cloud worker signal sent! Harvester is now running 24/7.")
+      st.success(f"Cloud worker signal sent! Harvester starting at MC-{target_mc}.")
       st.rerun()
+    else:
+      st.error("Please enter a valid numeric MC value.")
 
   if col_btn2.button("🛑 STOP Cloud Sequence", use_container_width=True):
     update_crawler_state(current_mc_val, False)
@@ -342,23 +348,42 @@ if not show_admin_panel:
 
   st.markdown("---")
 
-  # --- METRICS & COUNTERS ---
+  # --- METRICS & COUNTERS (ROBUST FILTERING) ---
   try:
     all_leads_res = supabase.table("harvested_leads").select("*", count="exact").execute()
     total_records = all_leads_res.count if all_leads_res.count is not None else len(all_leads_res.data)
     
     df_all = pd.DataFrame(all_leads_res.data) if all_leads_res.data else pd.DataFrame()
     
-    if not df_all.empty and "operating_status" in df_all.columns:
-      df_verified = df_all[
-          (df_all["operating_status"].str.upper().isin(["ACTIVE", "A"])) & 
-          (df_all["email_address"].notna()) & 
-          (df_all["email_address"].str.strip() != "")
-      ]
+    if not df_all.empty:
+      # Normalize column names to lowercase to prevent matching bugs
+      df_all.columns = [str(c).lower().strip() for c in df_all.columns]
+      
+      # Flexible filtering for verified active leads containing emails
+      status_col = "operating_status" if "operating_status" in df_all.columns else ("status" if "status" in df_all.columns else None)
+      email_col = "email_address" if "email_address" in df_all.columns else ("email" if "email" in df_all.columns else None)
+      
+      if status_col and email_col:
+        df_verified = df_all[
+            (df_all[status_col].astype(str).str.upper().str.contains("ACTIVE|A")) & 
+            (df_all[email_col].notna()) & 
+            (df_all[email_col].astype(str).str.strip() != "") &
+            (df_all[email_col].astype(str).str.lower() != "none") &
+            (df_all[email_col].astype(str).str.lower() != "nan")
+        ]
+      else:
+        # Fallback if specific status column names vary
+        df_verified = df_all[
+            (df_all.iloc[:, 1].notna()) & 
+            (df_all.iloc[:, 1].astype(str).str.strip() != "")
+        ] if len(df_all.columns) > 1 else pd.DataFrame()
+        
       verified_count = len(df_verified)
     else:
       verified_count = 0
-  except Exception:
+      df_verified = pd.DataFrame()
+  except Exception as e:
+    print(f"Error filtering data: {e}")
     total_records = 0
     verified_count = 0
     df_all = pd.DataFrame()
@@ -392,7 +417,7 @@ if not show_admin_panel:
     if not df_verified.empty:
       st.dataframe(df_verified, use_container_width=True)
     else:
-      st.info("No verified active carriers with emails found yet.")
+      st.info("No verified active carriers with emails found yet. Once your crawler scrapes active carriers with valid email entries, they will appear here automatically.")
 
   with tab_all:
     st.subheader("📋 Master History Sheet (All Harvested Records)")
