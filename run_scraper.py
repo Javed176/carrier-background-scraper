@@ -12,6 +12,7 @@ if not SUPABASE_URL or not SUPABASE_KEY:
     print("🔑 Database configuration missing!")
     exit(1)
 
+# Initialize Supabase client
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 def get_carrier_info(mc_number, token, retries=6):
@@ -72,9 +73,8 @@ def parse_carrier_data(mc_number, raw_data):
 
 def main():
     print("Starting background harvesting sequence...")
-    # Starting MC number can be adjusted or pulled dynamically
     start_mc = 1066434
-    batch_size = 50  # Number of items to process per run
+    batch_size = 50
     
     for i in range(batch_size):
         current_mc = start_mc + i
@@ -85,12 +85,12 @@ def main():
         
         if parsed:
             try:
-                supabase.table("harvested_leads").upsert(parsed, on_conflict="mc_number").execute()
-                print(f"Saved lead: {parsed['email_address']}")
+                response = supabase.table("harvested_leads").upsert(parsed, on_conflict="mc_number").execute()
+                print(f"Successfully saved lead: {parsed['email_address']}")
             except Exception as e:
                 print(f"Database insert error: {e}")
                 
-        time.sleep(0.3) # Throttle delay
+        time.sleep(0.3)
 
     print("Batch run completed successfully.")
 
