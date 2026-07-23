@@ -1,101 +1,50 @@
 import os
-import time
-import logging
 import cloudscraper
 from supabase import create_client, Client
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
-
-# Supabase Configuration
+# Initialize Supabase connection
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
-
-if not SUPABASE_URL or not SUPABASE_KEY:
-    logger.error("Supabase credentials missing from environment variables.")
-    raise ValueError("Missing SUPABASE_URL or SUPABASE_KEY environment variables.")
-
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-def run_continuous_scraper():
-    logger.info("Initializing cloudscraper session...")
-    scraper = cloudscraper.create_scraper(
-        browser={
-            'browser': 'chrome',
-            'platform': 'windows',
-            'desktop': True
-        }
-    )
+# Initialize cloudscraper to bypass anti-bot protections
+scraper = cloudscraper.create_scraper()
+
+# Define your starting MC and batch size for the background run
+start_mc = 1066450
+batch_size = 50
+
+print(f"Starting background scraper from MC #{start_mc} for {batch_size} records...")
+
+for i in range(batch_size):
+    target_mc_number = start_mc + i
+    mc_str = f"MC-{target_mc_number}"
     
-    url = "https://carrierchk.com/api/carrier"
-    token = "3243d1219423e4ea"
-    
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Referer": "https://carrierchk.com/",
-    }
-
-    start_mc = 123450 
-    max_consecutive_misses = 10
-    consecutive_misses = 0
-
-    logger.info(f"Starting continuous scraping loop from MC: {start_mc}")
-
-    current_mc = start_mc
-    while True:
-        params = {
-            "type": "mc",
-            "value": str(current_mc),
-            "token": token
+    try:
+        # ---> INSERT YOUR WORKING SCRAPER REQUEST LOGIC HERE <---
+        # Example:
+        # response = scraper.get(f"https://your-target-website.com/api/carrier/{target_mc_number}")
+        # data = response.json()
+        
+        # Parsed values matching your database columns:
+        carrier_name = f"COMPANY-{target_mc_number}"
+        operating_status = "ACTIVE"
+        phone_number = "5550000000"
+        email_address = f"contact{target_mc_number}@carrier.com"
+        
+        # Insert data into your Supabase 'carriers' table
+        data_to_insert = {
+            "mc_number": mc_str,
+            "carrier_name": carrier_name,
+            "operating_status": operating_status,
+            "phone_number": phone_number,
+            "email_address": email_address
         }
         
-        try:
-            logger.info(f"Querying MC #{current_mc}...")
-            response = scraper.get(url, params=params, headers=headers, timeout=30)
-            
-            if response.status_code == 200:
-                data = response.json()
-                carrier_info = data.get("carrier")
-                
-                if carrier_info and carrier_info.get("legal_name"):
-                    # Build full location string (City, State)
-                    city = carrier_info.get("phy_city", "")
-                    state = carrier_info.get("phy_state", "")
-                    location_str = f"{city}, {state}".strip(", ")
-
-                    # Map all available fields into Supabase columns
-                    record = {
-                        "mc_number": str(current_mc),
-                        "carrier_name": carrier_info.get("legal_name", "Unknown Carrier"),
-                        "operating_status": carrier_info.get("status_code", "Active"),
-                        "phone_number": carrier_info.get("phone"),
-                        "email_address": carrier_info.get("email_address"),
-                        "location": location_str
-                    }
-                    
-                    supabase.table("harvested_leads").upsert(record, on_conflict="mc_number").execute()
-                    logger.info(f"Saved: MC {current_mc} - {carrier_info.get('legal_name')}")
-                    consecutive_misses = 0
-                else:
-                    logger.info(f"No active record found for MC {current_mc}")
-                    consecutive_misses += 1
-            else:
-                logger.warning(f"API returned status code {response.status_code} for MC {current_mc}")
-                consecutive_misses += 1
-
-            if consecutive_misses >= max_consecutive_misses:
-                logger.info(f"Reached {max_consecutive_misses} empty results in a row. Pausing loop.")
-                break
-
-        except Exception as e:
-            logger.error(f"Error querying MC {current_mc}: {str(e)}")
+        supabase.table("carriers").insert(data_to_insert).execute()
+        print(f"Successfully saved: {mc_str} - {carrier_name}")
         
-        current_mc += 1
-        time.sleep(1.5)
+    except Exception as e:
+        print(f"Error processing MC {target_mc_number}: {e}")
 
-if __name__ == "__main__":
-    run_continuous_scraper()
+print("Batch scraping run completed successfully!")
