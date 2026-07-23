@@ -59,8 +59,9 @@ if st.button("Start Scraping", type="primary"):
                         state = carrier_info.get("phy_state", "")
                         location_str = f"{city}, {state}".strip(", ")
 
-                        raw_status = carrier_info.get("status_code", "ACTIVE").upper()
-                        if "ACTIVE" in raw_status:
+                        # Fixed status check for shorthand codes ('A' = Active)
+                        raw_status = str(carrier_info.get("status_code", "A")).upper()
+                        if raw_status == "A" or "ACTIVE" in raw_status:
                             status_str = "🟢 ACTIVE"
                         else:
                             status_str = f"🔴 {raw_status}"
@@ -94,14 +95,14 @@ if st.button("Start Scraping", type="primary"):
         
         progress_bar.progress((i + 1) / max_records)
         current_mc += 1
-        time.sleep(3)  # Polite pacing delay to prevent triggering continuous 429 rate limits
+        time.sleep(3)
 
     st.success(f"Batch completed! Successfully harvested {success_count} records.")
 
 st.markdown("---")
 st.subheader("Master History Sheet & Downloads")
 
-# Fetch data from Supabase to view and download
+# Fetch data from Supabase to view and manage
 try:
     response = supabase.table("harvested_leads").select("*").execute()
     data = response.data
@@ -110,14 +111,22 @@ try:
         df = pd.DataFrame(data)
         st.dataframe(df, use_container_width=True)
         
-        csv_data = df.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            label="📥 Export Master Sheet to CSV",
-            data=csv_data,
-            file_name="harvested_carriers.csv",
-            mime="text/csv",
-            type="primary"
-        )
+        col1, col2 = st.columns(2)
+        with col1:
+            csv_data = df.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Export Master Sheet to CSV",
+                data=csv_data,
+                file_name="harvested_carriers.csv",
+                mime="text/csv",
+                type="primary"
+            )
+        with col2:
+            if st.button("🗑️ Clear / Delete All Stored Data", type="secondary"):
+                # Delete all rows in harvested_leads where mc_number is not null
+                supabase.table("harvested_leads").delete().neq("mc_number", "NONE").execute()
+                st.success("All data cleared successfully! Refresh the page to update view.")
+                st.rerun()
     else:
         st.info("No records found in the database yet. Run the scraper above to harvest leads.")
 except Exception as e:
