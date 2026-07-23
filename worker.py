@@ -60,7 +60,7 @@ def main_loop():
 
       # 2. Fetch global speed config
       cfg_res = supabase.table("system_config").select("*").execute().data
-      delay_ms = 100.0  # Default to faster processing
+      delay_ms = 100.0
       for row in cfg_res:
         if row["key"] == "throttle_delay_ms":
           delay_ms = float(row["value"])
@@ -69,7 +69,6 @@ def main_loop():
       data = get_carrier_info(str(current_mc), CARRIER_TOKEN)
 
       if data and isinstance(data, dict):
-        # Extract fields based on typical carrierchk response structure
         carrier_info = data.get("carrier", data)
 
         carrier_name = carrier_info.get(
@@ -94,8 +93,8 @@ def main_loop():
             "email_address": email_address,
         }
 
-        # Save directly to the carriers table
-        supabase.table("carriers").upsert(
+        # Save directly to the harvested_leads table
+        supabase.table("harvested_leads").upsert(
             data_to_insert, on_conflict="mc_number"
         ).execute()
         print(f"Successfully saved: MC-{current_mc} - {carrier_name}")
@@ -106,7 +105,7 @@ def main_loop():
           "id", 1
       ).execute()
 
-      # 4. Respect throttle delay (optimized minimum floor)
+      # 4. Respect throttle delay
       time.sleep(max(0.1, delay_ms / 1000.0))
 
     except Exception as e:
