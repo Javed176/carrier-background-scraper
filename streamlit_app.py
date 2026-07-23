@@ -55,22 +55,30 @@ if st.session_state.is_running:
         target_mc = current_mc + i
         
         try:
-            # ---> Insert your cloudscraper request logic here <---
-            # Example: response = scraper.get(f"https://api.example.com/carrier/{target_mc}")
+            # 1. Make your actual request using cloudscraper
+            # Replace with your actual target URL endpoint
+            url = f"https://your-target-website.com/api/carrier/{target_mc}"
+            response = scraper.get(url)
             
-            company_name = f"COMPANY-{target_mc}" # Replace with parsed data from response
-            status = "Active"                  # Replace with parsed status
-            
-            # Save to Supabase carriers table
-            data_to_insert = {
-                "mc_number": str(target_mc),
-                "company_name": company_name,
-                "status": status
-            }
-            supabase.table("carriers").insert(data_to_insert).execute()
-            
-            st.success(f"Saved: MC-{target_mc} - {company_name}")
-            
+            if response.status_code == 200:
+                data = response.json()
+                
+                # 2. Extract real values from the response
+                company_name = data.get("company_name", "Unknown")
+                status = data.get("status", "Active")
+                
+                # 3. Save the real data to Supabase
+                data_to_insert = {
+                    "mc_number": str(target_mc),
+                    "company_name": company_name,
+                    "status": status
+                }
+                supabase.table("carriers").insert(data_to_insert).execute()
+                
+                st.success(f"Saved: MC-{target_mc} - {company_name}")
+            else:
+                st.warning(f"MC {target_mc} not found or blocked.")
+                
         except Exception as e:
             st.error(f"Error fetching MC {target_mc}: {e}")
             
