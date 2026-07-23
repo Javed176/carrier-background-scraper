@@ -31,13 +31,10 @@ def run_scraper():
         }
     )
     
-    # Correct API endpoint and parameters
     url = "https://carrierchk.com/api/carrier"
-    
-    # Example MC number to query (you can loop through a list of numbers or fetch dynamically)
     params = {
         "type": "mc",
-        "value": "123456",  # Replace or expand with your target MC numbers
+        "value": "123456",  # Update or loop through target MC numbers as needed
         "token": "3243d1219423e4ea"
     }
     
@@ -55,6 +52,7 @@ def run_scraper():
         if response.status_code == 200:
             try:
                 data = response.json()
+                logger.info(f"API Response Payload: {data}")
                 process_and_store_data(data)
             except Exception as json_err:
                 logger.warning(f"Response is not JSON. Content preview: {response.text[:200]}...")
@@ -66,21 +64,28 @@ def run_scraper():
         logger.error(f"An error occurred during scraping: {str(e)}")
 
 def process_and_store_data(data):
-    """Processes scraped payload and pushes records safely to Supabase."""
+    """Maps and pushes records safely to Supabase."""
     try:
         logger.info("Processing payload for Supabase insertion...")
         
-        # Format records into a list if it's a single dictionary payload
-        records = data if isinstance(data, list) else [data]
+        items = data if isinstance(data, list) else [data]
         
-        if not records or not records[0]:
+        if not items or not items[0]:
             logger.info("No valid records found to insert.")
             return
 
-        for record in records:
-            supabase.table("harvested_leads").upsert(record).execute()
+        for item in items:
+            # Explicitly map JSON fields to your Supabase columns
+            record = {
+                "mc_number": str(item.get("mc_number") or item.get("mc") or "123456"),
+                "carrier_name": item.get("carrier_name") or item.get("name") or "Unknown Carrier",
+                "operating_status": item.get("operating_status") or item.get("status") or "Active"
+            }
             
-        logger.info(f"Successfully processed and stored {len(records)} records.")
+            result = supabase.table("harvested_leads").upsert(record).execute()
+            logger.info(f"Inserted record: {record}")
+            
+        logger.info(f"Successfully processed and stored {len(items)} records.")
         
     except Exception as e:
         logger.error(f"Database insertion error: {str(e)}")
