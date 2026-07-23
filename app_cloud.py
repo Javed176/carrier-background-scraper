@@ -342,48 +342,61 @@ if not show_admin_panel:
 
   st.markdown("---")
 
-  # --- DATABASE MAINTENANCE ---
-  st.subheader("🗑️ Database Maintenance")
-  st.write("Clear out old historical data or logs from your database.")
+  # --- METRICS & COUNTERS ---
+  try:
+    all_leads_res = supabase.table("harvested_leads").select("*", count="exact").execute()
+    total_records = all_leads_res.count if all_leads_res.count is not None else len(all_leads_res.data)
+    
+    df_all = pd.DataFrame(all_leads_res.data) if all_leads_res.data else pd.DataFrame()
+    
+    if not df_all.empty and "operating_status" in df_all.columns:
+      df_verified = df_all[
+          (df_all["operating_status"].str.upper().isin(["ACTIVE", "A"])) & 
+          (df_all["email_address"].notna()) & 
+          (df_all["email_address"].str.strip() != "")
+      ]
+      verified_count = len(df_verified)
+    else:
+      verified_count = 0
+  except Exception:
+    total_records = 0
+    verified_count = 0
+    df_all = pd.DataFrame()
+    df_verified = pd.DataFrame()
 
-  col_m1, col_m2 = st.columns(2)
-  with col_m1:
-    if st.button("🗑️ Clear Activity Logs", type="secondary"):
-      try:
-        supabase.table("activity_logs").delete().neq("id", 0).execute()
-        st.success("Activity logs cleared!")
-        st.rerun()
-      except Exception as e:
-        st.error(f"Error: {e}")
-
-  with col_m2:
-    if st.button("🗑️ Clear Harvested Leads Table", type="primary"):
-      try:
-        supabase.table("harvested_leads").delete().neq("id", 0).execute()
-        st.success("Harvested leads table cleared successfully!")
-        st.rerun()
-      except Exception as e:
-        st.error(f"Error clearing table: {e}")
+  m1, m2 = st.columns(2)
+  m1.metric("📊 Total Harvested Records", total_records)
+  m2.metric("✅ Verified Active Leads (With Email)", verified_count)
 
   st.markdown("---")
-  st.subheader("📋 Master History Sheet (Harvested Carriers)")
 
-  try:
-    carriers_res = (
-        supabase.table("harvested_leads")
-        .select("*")
-        .order("created_at", desc=True)
-        .limit(100)
-        .execute()
-    )
-    if carriers_res.data:
-      st.dataframe(pd.DataFrame(carriers_res.data), use_container_width=True)
+  # --- DATABASE MAINTENANCE ---
+  st.subheader("🗑️ Database Maintenance")
+  st.write("Clear out old historical data from your database.")
+
+  if st.button("🗑️ Clear Harvested Leads Table", type="primary"):
+    try:
+      supabase.table("harvested_leads").delete().neq("id", 0).execute()
+      st.success("Harvested leads table cleared successfully!")
+      st.rerun()
+    except Exception as e:
+      st.error(f"Error clearing table: {e}")
+
+  st.markdown("---")
+
+  # --- TABS FOR TABLES ---
+  tab_verified, tab_all = st.tabs(["✅ Verified Active Emails", "📋 Master History Sheet"])
+
+  with tab_verified:
+    st.subheader("✅ Verified Active Carriers (Active Status + Valid Email)")
+    if not df_verified.empty:
+      st.dataframe(df_verified, use_container_width=True)
     else:
-      st.info(
-          "No carrier records found yet. Start the scraper to harvest data."
-      )
-  except Exception as e:
-    st.info(
-        "Could not load harvested_leads table. Make sure your table name"
-        " matches."
-    )
+      st.info("No verified active carriers with emails found yet.")
+
+  with tab_all:
+    st.subheader("📋 Master History Sheet (All Harvested Records)")
+    if not df_all.empty:
+      st.dataframe(df_all, use_container_width=True)
+    else:
+      st.info("No carrier records found yet. Start the scraper to harvest data.")
